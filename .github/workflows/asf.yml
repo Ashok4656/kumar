@@ -1,0 +1,199 @@
+name: Azure654
+on:
+  workflow_dispatch:
+    inputs:
+      Subscription:
+        type: choice
+        description: "Please select Source Subscription"
+        options:
+          - sub-jda-cld-solutions-01
+          - sub-by-cld-solutions-ase-02
+          - sub-by-cld-solutions-aue-02
+          - sub-by-cld-solutions-eus2-02
+          - sub-by-cld-solutions-euw-02
+        required: true
+
+      ResourceGroup:
+        description: "Provide Source Resource Group"
+        required: true
+    
+      requestor:
+        description: 'Provide Requestor email id (If multiple Emails provide inputs as "abc@blueyonder.com,xyz@jda.com" with Comma[,] separated)'
+        required: true
+
+
+env:
+  SOURCE_SUBSCRIPTION: "${{ github.event.inputs.Subscription }}"
+  SOURCE_RESOURCEGROUP: "${{ github.event.inputs.ResourceGroup }}"
+  REQUESTOREMAIL: "${{ github.event.inputs.requestor }}"
+  
+  
+jobs:
+  GET_DETAILS_FROM_AZURE:
+    runs-on: ubuntu-latest
+    outputs:
+      Targetsubscription: ${{ steps.target_components.outputs.targetsubscription }}
+      TargetresourceGroup: ${{ steps.target_components.outputs.targetResourceGroup }}
+     
+      
+    steps:
+      - uses: actions/checkout@v2    
+      
+      - name: Validate the source to target
+        id: target_components
+        uses: azure/powershell@v1
+        with:
+         azPSVersion: "latest"
+         inlineScript: |
+            
+            $Arrays_subscription = "${{env.SOURCE_SUBSCRIPTION}}".Split("-")
+            
+            $Arrays_resourcegroup = "${{env.SOURCE_RESOURCEGROUP}}".Split("-")
+            if ($Arrays_subscription[4] -eq 'aue' -and $Arrays_resourcegroup[-1] -eq 'aue') {
+             $targetsubscription = "sub-by-cld-solutions-aues-02"
+             $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-aues"
+             echo $targetsubscription 
+             echo $targetResourceGroup }
+            if ($Arrays_subscription[4] -eq 'ase' -and $Arrays_resourcegroup[-1] -eq 'ase') {
+             $targetsubscription = "sub-by-cld-solutions-ae-02"
+             $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-ae"
+             echo $targetsubscription
+             echo $targetResourceGroup
+            }
+            if ($Arrays_subscription[4] -eq 'eus2' -and $Arrays_resourcegroup[-1] -eq 'eus2') {
+             $targetsubscription = "sub-by-cld-solutions-cus-02"
+             $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-cus"
+             echo $targetsubscription
+             echo $targetResourceGroup
+            }
+            if ($Arrays_subscription[4] -eq 'euw' -and $Arrays_resourcegroup[-1] -eq 'euw') {
+             $targetsubscription = "sub-by-cld-solutions-eun-02"
+             $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-enu"
+             echo $targetsubscription
+             echo $targetResourceGroup
+            }
+           
+            if ("${{env.SOURCE_SUBSCRIPTION}}" -eq 'sub-jda-cld-solutions-01' -and ($Arrays_resourcegroup[-1] -eq 'ase' -or $Arrays_resourcegroup[-1] -eq 'aue' -or $Arrays_resourcegroup[-1] -eq 'eus2' -or $Arrays_resourcegroup[-1] -eq 'euw')) {
+             $targetsubscription = "sub-jda-cld-dr-solutions-01"
+              if ($Arrays_resourcegroup[-1] -eq 'ase'){
+                 $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-ae"}
+              if ($Arrays_resourcegroup[-1] -eq 'aue'){
+                 $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-ause"}
+              if ($Arrays_resourcegroup[-1] -eq 'eus2'){
+                 $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-cus"}
+              if ($Arrays_resourcegroup[-1] -eq 'euw'){
+                 $targetResourceGroup = "rg-$($Arrays_resourcegroup[1])-dr-eun"}
+             echo $targetsubscription
+             echo $targetResourceGroup
+             }
+            else {
+             echo "source subscription and source resource group location was not matched
+             please select the appropriate resouece."
+            }
+             echo "$TargetresourceGroup"
+             echo "$Targetsubscription"
+            
+      - name: "connecting to ${{env.SUBSCRIPTION}} subscription"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDS_SECRETE_CLDSL01 }}
+          enable-AzPSSession: true
+        if: ${{ env.SUBSCRIPTION == 'sub-jda-cld-solutions-01' }}
+
+      - name: "connecting to ${{env.SUBSCRIPTION}} subscription"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDS_SECRETE_CLDSL02_EUS2 }}
+          enable-AzPSSession: true
+        if: ${{ env.SUBSCRIPTION == 'sub-by-cld-solutions-eus2-02' }}
+
+      - name: "connecting to ${{env.SUBSCRIPTION}} subscription"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDS_SECRETE_CLDSL02_EUW }}
+          enable-AzPSSession: true
+        if: ${{ env.SUBSCRIPTION == 'sub-by-cld-solutions-euw-02' }}
+
+      - name: "connecting to ${{env.SUBSCRIPTION}} subscription"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDS_SECRETE_CLDSL02_ASE }}
+          enable-AzPSSession: true
+        if: ${{ env.SUBSCRIPTION == 'sub-by-cld-solutions-ase-02' }}
+
+      - name: "connecting to ${{env.SUBSCRIPTION}} subscription"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDS_SECRETE_CLDSL02_AUE }}
+          enable-AzPSSession: true
+        if: ${{ env.SUBSCRIPTION == 'sub-by-cld-solutions-aue-02' }}
+    
+      - name: " Validate the core components in RG "
+        id: RG_details
+        uses: azure/powershell@v1
+        with:
+          azPSVersion: "latest"
+          inlineScript: |
+             
+                $RGDetails = Get-AzResourceGroup -Name "${{ steps.target_components.outputs.targetResourceGroup }}"
+                if ($RGDetails) {
+                    $resourceGroup = $RGDetails.ResourceGroupName
+                    $region = $RGDetails.Location
+                    $CustomerName = $RGDetails.Tags.CustomerName
+                    $environment = $RGDetails.Tags.Environment_Type
+                    $product = $RGDetails.Tags.Product_Group
+                    $StorageAccount = $RGDetails.Deployments.StorageAccountName
+                    $ApplicationSecurityGroup= $RGDetails.Deployments.ApplicationSecurityGroupName
+                    $ApplicationSecurityGroup= $RGDetails.Deployments.ApplicationSecurityGroupName
+                    $NetworkSecurityGroup = $RGDetails.Deployments.NetworkSecurityGroupName
+                    $RecoveryServicesVault = $RGDetails.Deployments.RecoveryServicesVaultName
+                    $LoadBalancer = $RGDetails.Deployments.LoadBalancerName
+                
+                
+                if (${{ steps.target_components.outputs.targetsubscription }} -eq 'sub-jda-cld-dr-solutions-01'){
+                  $VnetName = "vnet-dr-$($Arrays_resourcegroup[1])-01";
+                  $VnetRg = "rg-jda-prod-network-$($Arrays_resourcegroup[1]))-01";
+                 }else{
+                  $VnetName = "vnet-$($Arrays_resourcegroup[1])-01";
+                  $VnetRg = "rg-network-$($Arrays_resourcegroup[1])-01"; }
+                  
+                  $subnetName = "sn-$($Arrays_resourcegroup[1])-dr-$locAbbr"
+            
+                  $subnet = Get-AzVirtualNetworkSubnetConfig -ResourceGroupName $VnetRg -VirtualNetwork $VnetName -Name $SubnetName  
+                    
+                  
+              
+                    
+                } else {
+                    $validationError = "Server $($serverName)/Tags is not configured in Subscription or Incorrect Server/Subscription is Given, please check your given input again"
+                    throw "Server $($serverName)/Tags is not configured in Subscription or Incorrect Server/Subscription is Given, please check your given input again"
+                }
+                Write-Host "================================================================================================================"
+                Write-Host "################################################## RG Details ##################################################"
+                Write-Host "SUBSCRIPTION                : $Targetsubscription""
+                Write-Host "resourceGroup               : $resourceGroup"
+                Write-Host "PRODUCT                     : $product"
+                Write-Host "CUSTOMER NAME               : $CustomerName"
+                Write-Host "StroageAccount              : $StorageAccount"
+                Write-Host "region                      : $region"
+                Write-Host "ApplicationSecurityGroup    : $ApplicationSecurityGroup"
+                Write-Host "ApplicationSecurityGroup    : $ApplicationSecurityGroup"
+                Write-Host "NetworkSecurityGroup        : $NetworkSecurityGroup"
+                Write-Host "RecoveryServicesVault       : $RecoveryServicesVault"
+                Write-Host "LoadBalancer                : $LoadBalancer"
+                Write-Host "subnet                      : $subnet"
+                Write-Host "================================================================================================================"
+                # Input Validations
+                ## 1. Email
+                foreach ($x in $requestor.Split(",")) {
+                    try {
+                        $temp = [mailaddress]$x
+                        if ($temp.Host -ne "blueyonder.com" -and $temp.Host -ne "jda.com") 
+                        {
+                            throw "Please Validate the Email Given $x"
+                        }
+                    } Catch {
+                        $validationError = "Please Validate the Email Given - $requestor"
+                        throw "Please Validate the Email Given - $requestor"
+                    }
+                  }
